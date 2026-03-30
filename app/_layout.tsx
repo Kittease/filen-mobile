@@ -155,6 +155,10 @@ export default function RootLayout() {
 														options={SCREEN_OPTIONS.modal}
 													/>
 													<Stack.Screen
+														name="folderSyncSettings"
+														options={SCREEN_OPTIONS.base}
+													/>
+													<Stack.Screen
 														name="shareIntent"
 														options={SCREEN_OPTIONS.base}
 													/>

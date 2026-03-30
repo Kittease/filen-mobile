@@ -1,6 +1,7 @@
 import * as ExpoBackgroundTask from "expo-background-task"
 import * as ExpoTaskManager from "expo-task-manager"
 import { backgroundCameraUpload } from "./cameraUpload"
+import { backgroundFolderSync } from "./folderSync"
 import { BACKGROUND_TASK_IDENTIFIER } from "./constants"
 import authService from "@/services/auth.service"
 
@@ -54,6 +55,12 @@ ExpoTaskManager.defineTask(BACKGROUND_TASK_IDENTIFIER, async () => {
 			await backgroundCameraUpload.run({
 				abortController
 			})
+
+			if (!abortController.signal.aborted) {
+				await backgroundFolderSync.run({
+					abortController
+				})
+			}
 		} finally {
 			clearTimeout(abortTimeout)
 		}

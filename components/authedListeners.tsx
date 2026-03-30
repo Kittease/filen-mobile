@@ -6,11 +6,13 @@ import nodeWorker from "@/lib/nodeWorker"
 import alerts from "@/lib/alerts"
 import { AppState } from "react-native"
 import { foregroundCameraUpload } from "@/lib/cameraUpload"
+import { foregroundFolderSync } from "@/lib/folderSync"
 
 export const AuthedListeners = memo(() => {
 	const { push: routerPush } = useRouter()
 	const [{ baseFolderUUID, userId }] = useSDKConfig()
 	const nextCameraUploadRunRef = useRef<number>(0)
+	const nextFolderSyncRunRef = useRef<number>(0)
 	const updateTransfersIntervalRef = useRef<ReturnType<typeof setInterval>>(undefined)
 
 	const updateTransfers = useCallback(async () => {
@@ -33,6 +35,12 @@ export const AuthedListeners = memo(() => {
 				nextCameraUploadRunRef.current = now + 5000
 
 				foregroundCameraUpload.run().catch(console.error)
+			}
+
+			if (nextAppState === "active" && now > nextFolderSyncRunRef.current) {
+				nextFolderSyncRunRef.current = now + 10000
+
+				foregroundFolderSync.run().catch(console.error)
 			}
 		})
 
