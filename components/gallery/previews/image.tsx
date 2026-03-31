@@ -14,7 +14,7 @@ import download from "@/lib/download"
 import paths from "@/lib/paths"
 import { randomUUID } from "expo-crypto"
 import * as FileSystem from "expo-file-system"
-import { normalizeFilePathForExpo } from "@/lib/utils"
+import { normalizeFilePathForExpo, normalizeFilePath } from "@/lib/utils"
 
 let extractRawPreview: ((inputPath: string, outputPath: string) => Promise<void>) | null = null
 
@@ -88,7 +88,7 @@ const RawImagePreview = memo(
 
 					if (cancelled) return
 
-					await extractRawPreview(rawPath, jpegOutputPath)
+					await extractRawPreview(normalizeFilePath(rawPath), normalizeFilePath(jpegOutputPath))
 
 					if (cancelled) return
 

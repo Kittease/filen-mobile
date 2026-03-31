@@ -3,8 +3,10 @@ package io.filen.rawimageconverter
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import expo.modules.kotlin.exception.CodedException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.graphics.Bitmap
+import androidx.exifinterface.media.ExifInterface
 import java.io.File
 import java.io.FileOutputStream
 import java.io.RandomAccessFile
@@ -20,9 +22,117 @@ class RawImageConverterModule : Module() {
         Name("RawImageConverter")
 
         AsyncFunction("extractRawPreview") { inputPath: String, outputPath: String ->
-            withContext(Dispatchers.IO) {
-                extractLargestJpeg(inputPath, outputPath)
+            extractLargestJpeg(inputPath, outputPath)
+        }
+    }
+
+    private fun getExifRotation(file: File): Float {
+        return try {
+            val exif = ExifInterface(file.absolutePath)
+
+            orientationToRotation(exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL))
+        } catch (_: Exception) {
+            0f
+        }
+    }
+
+    /**
+     * Scan the first portion of a file for a TIFF IFD orientation tag.
+     * Works with CR3 and other formats where ExifInterface may not parse the container.
+     */
+    private fun scanForOrientation(file: File): Float {
+        return try {
+            val raf = RandomAccessFile(file, "r")
+
+            try {
+                val scanSize = minOf(65536L, raf.length()).toInt()
+                val buf = ByteArray(scanSize)
+
+                raf.readFully(buf, 0, scanSize)
+
+                // Look for TIFF header (II = little-endian, MM = big-endian)
+                for (i in 0 until scanSize - 2) {
+                    val isTiffLE = buf[i] == 0x49.toByte() && buf[i + 1] == 0x49.toByte()
+                    val isTiffBE = buf[i] == 0x4D.toByte() && buf[i + 1] == 0x4D.toByte()
+
+                    if (!isTiffLE && !isTiffBE) continue
+                    if (i + 4 > scanSize) continue
+
+                    // Verify TIFF magic number (42)
+                    val magic = if (isTiffLE) {
+                        (buf[i + 2].toInt() and 0xFF) or ((buf[i + 3].toInt() and 0xFF) shl 8)
+                    } else {
+                        ((buf[i + 2].toInt() and 0xFF) shl 8) or (buf[i + 3].toInt() and 0xFF)
+                    }
+
+                    if (magic != 42) continue
+
+                    // Read IFD0 offset
+                    val ifdOffset = if (isTiffLE) {
+                        readU32LE(buf, i + 4)
+                    } else {
+                        readU32BE(buf, i + 4)
+                    }
+
+                    val absIfdOffset = i + ifdOffset.toInt()
+
+                    if (absIfdOffset + 2 > scanSize) continue
+
+                    val numEntries = if (isTiffLE) {
+                        readU16LE(buf, absIfdOffset)
+                    } else {
+                        readU16BE(buf, absIfdOffset)
+                    }
+
+                    for (e in 0 until numEntries) {
+                        val entryOffset = absIfdOffset + 2 + e * 12
+
+                        if (entryOffset + 12 > scanSize) break
+
+                        val tag = if (isTiffLE) readU16LE(buf, entryOffset) else readU16BE(buf, entryOffset)
+
+                        // 0x0112 = Orientation tag
+                        if (tag == 0x0112) {
+                            val value = if (isTiffLE) readU16LE(buf, entryOffset + 8) else readU16BE(buf, entryOffset + 8)
+
+                            return orientationToRotation(value)
+                        }
+                    }
+                }
+
+                0f
+            } finally {
+                raf.close()
             }
+        } catch (_: Exception) {
+            0f
+        }
+    }
+
+    private fun readU16LE(buf: ByteArray, offset: Int): Int =
+        (buf[offset].toInt() and 0xFF) or ((buf[offset + 1].toInt() and 0xFF) shl 8)
+
+    private fun readU16BE(buf: ByteArray, offset: Int): Int =
+        ((buf[offset].toInt() and 0xFF) shl 8) or (buf[offset + 1].toInt() and 0xFF)
+
+    private fun readU32LE(buf: ByteArray, offset: Int): Long =
+        (buf[offset].toLong() and 0xFF) or
+        ((buf[offset + 1].toLong() and 0xFF) shl 8) or
+        ((buf[offset + 2].toLong() and 0xFF) shl 16) or
+        ((buf[offset + 3].toLong() and 0xFF) shl 24)
+
+    private fun readU32BE(buf: ByteArray, offset: Int): Long =
+        ((buf[offset].toLong() and 0xFF) shl 24) or
+        ((buf[offset + 1].toLong() and 0xFF) shl 16) or
+        ((buf[offset + 2].toLong() and 0xFF) shl 8) or
+        (buf[offset + 3].toLong() and 0xFF)
+
+    private fun orientationToRotation(orientation: Int): Float {
+        return when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> 90f
+            ExifInterface.ORIENTATION_ROTATE_180 -> 180f
+            ExifInterface.ORIENTATION_ROTATE_270 -> 270f
+            else -> 0f
         }
     }
 
@@ -94,12 +204,14 @@ class RawImageConverterModule : Module() {
                 throw NoEmbeddedPreviewException()
             }
 
-            // Write the largest JPEG to the output file
+            // Write the largest JPEG to a temp file first
             val outFile = File(outputPath)
             outFile.parentFile?.mkdirs()
 
+            val tempFile = File(outputPath + ".tmp")
+
             raf.seek(bestOffset)
-            FileOutputStream(outFile).use { fos ->
+            FileOutputStream(tempFile).use { fos ->
                 val copyBuffer = ByteArray(65536)
                 var remaining = bestSize
                 while (remaining > 0) {
@@ -109,6 +221,38 @@ class RawImageConverterModule : Module() {
                     fos.write(copyBuffer, 0, read)
                     remaining -= read
                 }
+            }
+
+            // Apply EXIF rotation — try ExifInterface on RAW, then byte-level scan for CR3/etc,
+            // then fall back to the extracted JPEG preview
+            val rotation = getExifRotation(file).let {
+                if (it != 0f) it else scanForOrientation(file)
+            }.let {
+                if (it != 0f) it else getExifRotation(tempFile)
+            }
+
+            if (rotation != 0f) {
+                val original = BitmapFactory.decodeFile(tempFile.absolutePath)
+
+                if (original != null) {
+                    val matrix = Matrix().apply { postRotate(rotation) }
+                    val rotated = Bitmap.createBitmap(original, 0, 0, original.width, original.height, matrix, true)
+
+                    FileOutputStream(outFile).use { fos ->
+                        rotated.compress(Bitmap.CompressFormat.JPEG, 95, fos)
+                    }
+
+                    if (rotated !== original) {
+                        rotated.recycle()
+                    }
+
+                    original.recycle()
+                    tempFile.delete()
+                } else {
+                    tempFile.renameTo(outFile)
+                }
+            } else {
+                tempFile.renameTo(outFile)
             }
         } finally {
             raf.close()
