@@ -69,6 +69,12 @@ export const Settings = memo(() => {
 		})
 	}, [router])
 
+	const onPressFolderSync = useCallback(() => {
+		router.push({
+			pathname: "/folderSyncSettings"
+		})
+	}, [router])
+
 	const onChangeFileProvider = useCallback(async (value: boolean) => {
 		fullScreenLoadingModal.show()
 
@@ -179,6 +185,19 @@ export const Settings = memo(() => {
 				)
 			},
 			{
+				id: "3b",
+				testID: "settings.folderSync",
+				title: "Folder Sync",
+				subTitle: "Two-way sync between local and cloud folders",
+				onPress: onPressFolderSync,
+				leftView: (
+					<IconView
+						name="sync"
+						className="bg-teal-500"
+					/>
+				)
+			},
+			{
 				id: "4",
 				testID: "settings.fileProvider",
 				title: Platform.select({
@@ -254,6 +273,7 @@ export const Settings = memo(() => {
 		onPressContacts,
 		onPressAdvanced,
 		onPressCameraUpload,
+		onPressFolderSync,
 		fileProviderEnabledQuery.data,
 		onChangeFileProvider,
 		onPressAppearance
