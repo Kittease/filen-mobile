@@ -50,6 +50,9 @@ const networkSecurityConfigContent = `<?xml version="1.0" encoding="utf-8"?>
 	</domain-config>
 	<domain-config cleartextTrafficPermitted="true">
 		<domain includeSubdomains="true">192.168.0.15</domain>
+	</domain-config>
+	<domain-config cleartextTrafficPermitted="true">
+		<domain includeSubdomains="true">192.168.1.115</domain>
 	</domain-config>`
 			: ""
 	}
