@@ -136,10 +136,81 @@ class RawImageConverterModule : Module() {
         }
     }
 
+    /**
+     * DNG files can be decoded natively by Android's BitmapFactory (API 24+).
+     * This gives a full-resolution result instead of a small embedded thumbnail.
+     */
+    private fun decodeDngNatively(inputPath: String, outputPath: String): Boolean {
+        if (!inputPath.lowercase().endsWith(".dng")) return false
+
+        return try {
+            val options = BitmapFactory.Options().apply {
+                // Subsample to avoid OOM on very large DNG files
+                inSampleSize = 1
+            }
+
+            // First, just decode bounds to decide on sample size
+            val boundsOptions = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(inputPath, boundsOptions)
+
+            if (boundsOptions.outWidth <= 0 || boundsOptions.outHeight <= 0) return false
+
+            // Subsample if the image is very large (>4096 on either dimension)
+            val maxDim = maxOf(boundsOptions.outWidth, boundsOptions.outHeight)
+            if (maxDim > 4096) {
+                var sampleSize = 1
+                while (maxDim / sampleSize > 4096) {
+                    sampleSize *= 2
+                }
+                options.inSampleSize = sampleSize
+            }
+
+            val bitmap = BitmapFactory.decodeFile(inputPath, options) ?: return false
+
+            try {
+                val file = File(inputPath)
+                val rotation = getExifRotation(file).let {
+                    if (it != 0f) it else scanForOrientation(file)
+                }
+
+                val outFile = File(outputPath)
+                outFile.parentFile?.mkdirs()
+
+                if (rotation != 0f) {
+                    val matrix = Matrix().apply { postRotate(rotation) }
+                    val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+
+                    FileOutputStream(outFile).use { fos ->
+                        rotated.compress(Bitmap.CompressFormat.JPEG, 95, fos)
+                    }
+
+                    if (rotated !== bitmap) {
+                        rotated.recycle()
+                    }
+                } else {
+                    FileOutputStream(outFile).use { fos ->
+                        bitmap.compress(Bitmap.CompressFormat.JPEG, 95, fos)
+                    }
+                }
+
+                true
+            } finally {
+                bitmap.recycle()
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private fun extractLargestJpeg(inputPath: String, outputPath: String) {
         val file = File(inputPath)
         if (!file.exists()) {
             throw FileReadException(inputPath, null)
+        }
+
+        // For DNG files, try native decoding first (full resolution)
+        if (decodeDngNatively(inputPath, outputPath)) {
+            return
         }
 
         val raf = try {
