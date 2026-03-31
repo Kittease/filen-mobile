@@ -108,4 +108,19 @@ export const REACT_NATIVE_AUDIO_PRO_SUPPORTED_EXTENSIONS = Platform.select({
 	default: [".mp3", ".m4a", ".aac", ".wav"]
 }) as string[]
 
+export const RAW_IMAGE_EXTENSIONS: string[] = [
+	".cr2",
+	".cr3",
+	".dng",
+	".nef",
+	".arw",
+	".raf",
+	".orf",
+	".rw2",
+	".pef",
+	".srw",
+	".nrw",
+	".raw"
+]
+
 export const CONTACTS_ONLINE_TIMEOUT: number = 300000

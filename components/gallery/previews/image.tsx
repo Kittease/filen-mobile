@@ -1,15 +1,220 @@
 import TurboImage, { type Failure } from "react-native-turbo-image"
-import { memo, useMemo, useState, useCallback, Fragment } from "react"
+import { memo, useMemo, useState, useCallback, useEffect, useRef, Fragment } from "react"
 import type { GalleryItem } from "@/stores/gallery.store"
-import { View, ActivityIndicator, type NativeSyntheticEvent } from "react-native"
+import { View, ActivityIndicator, Image as RNImage, Platform, type NativeSyntheticEvent } from "react-native"
 import { useColorScheme } from "@/lib/useColorScheme"
 import Animated, { FadeOut } from "react-native-reanimated"
 import useHTTPServer from "@/hooks/useHTTPServer"
 import { Icon } from "@roninoss/icons"
 import { Text } from "@/components/nativewindui/Text"
 import { cn } from "@/lib/cn"
+import { RAW_IMAGE_EXTENSIONS } from "@/lib/constants"
+import pathModule from "path"
+import download from "@/lib/download"
+import paths from "@/lib/paths"
+import { randomUUID } from "expo-crypto"
+import * as FileSystem from "expo-file-system"
+import { normalizeFilePathForExpo } from "@/lib/utils"
+
+let extractRawPreview: ((inputPath: string, outputPath: string) => Promise<void>) | null = null
+
+if (Platform.OS === "android") {
+	try {
+		const mod = require("@/modules/raw-image-converter")
+
+		extractRawPreview = mod.extractRawPreview
+	} catch {}
+}
+
+function isRawFile(name: string): boolean {
+	return Platform.OS === "android" && RAW_IMAGE_EXTENSIONS.includes(pathModule.posix.extname(name.trim().toLowerCase()))
+}
+
+const RawImagePreview = memo(
+	({
+		item,
+		layout
+	}: {
+		item: GalleryItem & { itemType: "cloudItem" }
+		layout: { width: number; height: number }
+	}) => {
+		const [jpegPath, setJpegPath] = useState<string | null>(null)
+		const [loading, setLoading] = useState<boolean>(true)
+		const [error, setError] = useState<string | null>(null)
+		const { colors, isDarkColorScheme } = useColorScheme()
+		const cleanupPaths = useRef<string[]>([])
+
+		const style = useMemo(() => {
+			return {
+				width: layout.width,
+				height: layout.height,
+				flex: 1 as const
+			}
+		}, [layout.width, layout.height])
+
+		useEffect(() => {
+			let cancelled = false
+			const fileItem = item.data.item
+
+			if (fileItem.type !== "file" || !extractRawPreview) {
+				setLoading(false)
+				setError("RAW preview not supported")
+				return
+			}
+
+			const run = async () => {
+				try {
+					const id = randomUUID()
+					const extname = pathModule.posix.extname(fileItem.name)
+					const tempDir = paths.temporaryDownloads()
+					const rawPath = pathModule.posix.join(tempDir, `${id}${extname}`)
+					const jpegOutputPath = pathModule.posix.join(tempDir, `${id}_preview.jpg`)
+
+					cleanupPaths.current.push(rawPath, jpegOutputPath)
+
+					await download.file.foreground({
+						id,
+						uuid: fileItem.uuid,
+						bucket: fileItem.bucket,
+						region: fileItem.region,
+						chunks: fileItem.chunks,
+						version: fileItem.version,
+						key: fileItem.key,
+						destination: normalizeFilePathForExpo(rawPath),
+						size: fileItem.size,
+						name: fileItem.name,
+						dontEmitProgress: true
+					})
+
+					if (cancelled) return
+
+					await extractRawPreview(rawPath, jpegOutputPath)
+
+					if (cancelled) return
+
+					// Clean up the large RAW file immediately, keep only the JPEG
+					const rawFile = new FileSystem.File(normalizeFilePathForExpo(rawPath))
+
+					if (rawFile.exists) {
+						rawFile.delete()
+					}
+
+					setJpegPath(jpegOutputPath)
+					setLoading(false)
+				} catch (e) {
+					if (!cancelled) {
+						setLoading(false)
+						setError(e instanceof Error ? e.message : "Failed to extract RAW preview")
+					}
+				}
+			}
+
+			run()
+
+			return () => {
+				cancelled = true
+
+				for (const p of cleanupPaths.current) {
+					try {
+						const f = new FileSystem.File(normalizeFilePathForExpo(p))
+
+						if (f.exists) {
+							f.delete()
+						}
+					} catch {}
+				}
+
+				cleanupPaths.current = []
+			}
+		}, [item.data.item])
+
+		return (
+			<View
+				className="flex-1"
+				style={style}
+			>
+				{loading && !error && (
+					<Animated.View
+						exiting={FadeOut}
+						className={cn(
+							"flex-1 absolute top-0 left-0 right-0 bottom-0 z-50 items-center justify-center",
+							isDarkColorScheme ? "bg-black" : "bg-white"
+						)}
+						style={style}
+					>
+						<ActivityIndicator
+							color={colors.foreground}
+							size="small"
+						/>
+					</Animated.View>
+				)}
+				{error && (
+					<Animated.View
+						exiting={FadeOut}
+						className={cn(
+							"flex-1 absolute top-0 left-0 right-0 bottom-0 z-50 items-center justify-center",
+							isDarkColorScheme ? "bg-black" : "bg-white"
+						)}
+						style={style}
+					>
+						<Icon
+							name="image-outline"
+							size={64}
+							color={colors.destructive}
+						/>
+						<Text className="text-muted-foreground text-sm text-center px-8 pt-2">{error}</Text>
+					</Animated.View>
+				)}
+				{jpegPath && !error && (
+					<RNImage
+						source={{ uri: `file://${jpegPath}` }}
+						resizeMode="contain"
+						style={style}
+					/>
+				)}
+			</View>
+		)
+	}
+)
+
+RawImagePreview.displayName = "RawImagePreview"
 
 export const Image = memo(
+	({
+		item,
+		layout
+	}: {
+		item: GalleryItem
+		layout: {
+			width: number
+			height: number
+		}
+	}) => {
+		const isRaw = useMemo(() => {
+			return item.itemType === "cloudItem" && item.data.item.type === "file" && isRawFile(item.data.item.name)
+		}, [item])
+
+		if (isRaw && item.itemType === "cloudItem") {
+			return (
+				<RawImagePreview
+					item={item as GalleryItem & { itemType: "cloudItem" }}
+					layout={layout}
+				/>
+			)
+		}
+
+		return (
+			<StandardImage
+				item={item}
+				layout={layout}
+			/>
+		)
+	}
+)
+
+Image.displayName = "Image"
+
+const StandardImage = memo(
 	({
 		item,
 		layout
@@ -29,7 +234,7 @@ export const Image = memo(
 			return {
 				width: layout.width,
 				height: layout.height,
-				flex: 1
+				flex: 1 as const
 			}
 		}, [layout.width, layout.height])
 
@@ -146,6 +351,6 @@ export const Image = memo(
 	}
 )
 
-Image.displayName = "Image"
+StandardImage.displayName = "StandardImage"
 
 export default Image
