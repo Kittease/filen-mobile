@@ -46,6 +46,9 @@ function buildStreamURL(file: DriveCloudItem): string | null {
  * Prefetch full-size images for the given items.
  * Standard images use TurboImage.prefetch (native disk cache).
  * RAW images use the rawPreviewCache (download + extract JPEG).
+ *
+ * Each prefetch goes through the local streaming server (cloud download + decrypt),
+ * so we prefetch one at a time to avoid bandwidth contention.
  */
 export function prefetchImages(items: DriveCloudItem[]): void {
 	const standardSources: { uri: string }[] = []
@@ -67,10 +70,17 @@ export function prefetchImages(items: DriveCloudItem[]): void {
 		}
 	}
 
+	// Prefetch standard images sequentially so the first (closest) image
+	// finishes before we start downloading the next one.
 	if (standardSources.length > 0) {
-		TurboImage.prefetch(standardSources).catch(() => {})
+		let chain = Promise.resolve(false)
+
+		for (const source of standardSources) {
+			chain = chain.then(() => TurboImage.prefetch([source], "dataCache")).catch(() => false)
+		}
 	}
 
+	// RAW prefetch already has its own concurrency limiter (semaphore of 2)
 	for (const rawItem of rawItems) {
 		rawPreviewCache.prefetch(rawItem).catch(() => {})
 	}

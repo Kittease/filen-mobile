@@ -54,12 +54,17 @@ export const Item = memo(({ item, index, layout }: { item: GalleryItem; index: n
 				onLongPress={onLongPress}
 				style={layout}
 			>
-				{!visible ? (
+				{item.previewType === "image" ? (
+					<Image
+						layout={layout}
+						item={item}
+					/>
+				) : !visible ? (
 					<Animated.View
 						exiting={FadeOut}
 						className={cn(
 							"flex-1 items-center justify-center",
-							item.previewType === "image" || item.previewType === "video"
+							item.previewType === "video"
 								? isDarkColorScheme
 									? "bg-black"
 									: "bg-white"
@@ -72,11 +77,6 @@ export const Item = memo(({ item, index, layout }: { item: GalleryItem; index: n
 							size="small"
 						/>
 					</Animated.View>
-				) : item.previewType === "image" ? (
-					<Image
-						layout={layout}
-						item={item}
-					/>
 				) : item.previewType === "video" ? (
 					<Video
 						layout={layout}
@@ -87,13 +87,6 @@ export const Item = memo(({ item, index, layout }: { item: GalleryItem; index: n
 						layout={layout}
 						item={item}
 					/>
-				) : item.previewType === "unknown" ? (
-					<View
-						className="flex-1 flex-row items-center justify-center"
-						style={layout}
-					>
-						<Text className="text-white">{translateMemoized("gallery.noPreviewAvailable")}</Text>
-					</View>
 				) : (
 					<View
 						className="flex-1 flex-row items-center justify-center"
@@ -206,7 +199,8 @@ export const GalleryModal = memo(() => {
 		}
 	}, [visible, onDismiss])
 
-	// Prefetch adjacent images (3 in each direction) when the visible index changes
+	// Prefetch adjacent images ordered by proximity (closest first) when the visible index changes.
+	// Items are ordered so the sequentially-prefetching pipeline finishes nearby images first.
 	useEffect(() => {
 		if (currentVisibleIndex === null || items.length === 0) {
 			return
@@ -214,19 +208,22 @@ export const GalleryModal = memo(() => {
 
 		const timer = setTimeout(() => {
 			const PREFETCH_COUNT = 3
-			const start = Math.max(0, currentVisibleIndex - PREFETCH_COUNT)
-			const end = Math.min(items.length - 1, currentVisibleIndex + PREFETCH_COUNT)
 			const itemsToPrefetch: DriveCloudItem[] = []
 
-			for (let i = start; i <= end; i++) {
-				if (i === currentVisibleIndex) {
-					continue
-				}
+			// Collect indices ordered by distance: ±1, ±2, ±3
+			for (let dist = 1; dist <= PREFETCH_COUNT; dist++) {
+				for (const offset of [dist, -dist]) {
+					const idx = currentVisibleIndex + offset
 
-				const galleryItem = items[i]
+					if (idx < 0 || idx >= items.length) {
+						continue
+					}
 
-				if (galleryItem?.itemType === "cloudItem" && galleryItem.previewType === "image") {
-					itemsToPrefetch.push(galleryItem.data.item)
+					const galleryItem = items[idx]
+
+					if (galleryItem?.itemType === "cloudItem" && galleryItem.previewType === "image") {
+						itemsToPrefetch.push(galleryItem.data.item)
+					}
 				}
 			}
 

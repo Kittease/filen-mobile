@@ -51,6 +51,14 @@ export class HTTP {
 				chunks: number
 				region: string
 			}
+			const ifNoneMatch = req.headers["if-none-match"]
+
+			if (ifNoneMatch === `"${file.uuid}"`) {
+				res.status(304).end()
+
+				return
+			}
+
 			const mimeType = file.mime ?? "application/octet-stream"
 			const totalLength = file.size
 			const range = req.headers.range || req.headers["content-range"]
@@ -81,6 +89,8 @@ export class HTTP {
 
 			res.set("Content-Type", mimeType)
 			res.set("Accept-Ranges", "bytes")
+			res.set("Cache-Control", "public, max-age=31536000, immutable")
+			res.set("ETag", `"${file.uuid}"`)
 
 			const stream = sdk.get().cloud().downloadFileToReadableStream({
 				uuid: file.uuid,
