@@ -8,15 +8,30 @@ import cache from "./cache"
 import { normalizeFilePathForExpo } from "./utils"
 import sqlite from "./sqlite"
 import * as VideoThumbnails from "expo-video-thumbnails"
-import { EXPO_IMAGE_MANIPULATOR_SUPPORTED_EXTENSIONS, EXPO_VIDEO_THUMBNAILS_SUPPORTED_EXTENSIONS } from "./constants"
+import { EXPO_IMAGE_MANIPULATOR_SUPPORTED_EXTENSIONS, EXPO_VIDEO_THUMBNAILS_SUPPORTED_EXTENSIONS, RAW_IMAGE_EXTENSIONS } from "./constants"
 import download from "./download"
 import pathModule from "path"
+import { Platform } from "react-native"
+
+let extractRawPreview: ((inputPath: string, outputPath: string) => Promise<void>) | null = null
+
+if (Platform.OS === "android") {
+	try {
+		const mod = require("@/modules/raw-image-converter")
+
+		extractRawPreview = mod.extractRawPreview
+	} catch {}
+}
 
 export const THUMBNAILS_MAX_ERRORS: number = 3
 export const THUMBNAILS_SIZE: number = 128
 export const THUMBNAILS_COMPRESSION: number = 0.8
 
-export const THUMBNAILS_SUPPORTED_FORMATS = [...EXPO_VIDEO_THUMBNAILS_SUPPORTED_EXTENSIONS, ...EXPO_IMAGE_MANIPULATOR_SUPPORTED_EXTENSIONS]
+export const THUMBNAILS_SUPPORTED_FORMATS = [
+	...EXPO_VIDEO_THUMBNAILS_SUPPORTED_EXTENSIONS,
+	...EXPO_IMAGE_MANIPULATOR_SUPPORTED_EXTENSIONS,
+	...(Platform.OS === "android" ? RAW_IMAGE_EXTENSIONS : [])
+]
 
 export class Thumbnails {
 	private readonly semaphore: Semaphore = new Semaphore(3)
@@ -268,6 +283,67 @@ export class Thumbnails {
 					}
 
 					manipulatedFile.move(destinationFile)
+				} else if (Platform.OS === "android" && RAW_IMAGE_EXTENSIONS.includes(extname) && extractRawPreview) {
+					const rawJpegFile = new FileSystem.File(
+						normalizeFilePathForExpo(pathModule.posix.join(temporaryDownloadsPath, `${id}_raw_preview.jpg`))
+					)
+
+					try {
+						if (originalFilePath) {
+							const originalFile = new FileSystem.File(normalizeFilePathForExpo(originalFilePath))
+
+							if (!originalFile.exists || !originalFile.size) {
+								throw new Error(`Original file at ${originalFilePath} does not exist.`)
+							}
+
+							originalFile.copy(tempDestinationFile)
+						} else {
+							await download.file.foreground({
+								id,
+								uuid: item.uuid,
+								bucket: item.bucket,
+								region: item.region,
+								chunks: item.chunks,
+								version: item.version,
+								key: item.key,
+								destination: tempDestinationFile.uri,
+								size: item.size,
+								name: item.name,
+								dontEmitProgress: true
+							})
+						}
+
+						await extractRawPreview(tempDestinationFile.uri.replace("file://", ""), rawJpegFile.uri.replace("file://", ""))
+
+						// Delete the large RAW temp file immediately
+						if (tempDestinationFile.exists) {
+							tempDestinationFile.delete()
+						}
+
+						const manipulated = await ImageManipulator.manipulate(normalizeFilePathForExpo(rawJpegFile.uri))
+							.resize({
+								width: THUMBNAILS_SIZE
+							})
+							.renderAsync()
+
+						const result = await manipulated.saveAsync({
+							compress: THUMBNAILS_COMPRESSION,
+							format: SaveFormat.PNG,
+							base64: false
+						})
+
+						const manipulatedFile = new FileSystem.File(result.uri)
+
+						if (!manipulatedFile.exists) {
+							throw new Error(`Generated thumbnail at ${result.uri} does not exist.`)
+						}
+
+						manipulatedFile.move(destinationFile)
+					} finally {
+						if (rawJpegFile.exists) {
+							rawJpegFile.delete()
+						}
+					}
 				} else {
 					throw new Error(`Cannot generate a thumbnail for item format ${extname}.`)
 				}

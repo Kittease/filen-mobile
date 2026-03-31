@@ -1,4 +1,5 @@
-import { TURBO_IMAGE_SUPPORTED_EXTENSIONS, EXPO_VIDEO_SUPPORTED_EXTENSIONS, EXPO_AUDIO_SUPPORTED_EXTENSIONS } from "./constants"
+import { TURBO_IMAGE_SUPPORTED_EXTENSIONS, EXPO_VIDEO_SUPPORTED_EXTENSIONS, EXPO_AUDIO_SUPPORTED_EXTENSIONS, RAW_IMAGE_EXTENSIONS } from "./constants"
+import { Platform } from "react-native"
 import type { PreviewType } from "@/stores/gallery.store"
 import pathModule from "path"
 import { t, translateMemoized } from "@/lib/i18n"
@@ -186,6 +187,10 @@ export function getPreviewType(name: string): PreviewType {
 	const extname = pathModule.posix.extname(name.trim().toLowerCase())
 
 	if (TURBO_IMAGE_SUPPORTED_EXTENSIONS.includes(extname)) {
+		return "image"
+	}
+
+	if (Platform.OS === "android" && RAW_IMAGE_EXTENSIONS.includes(extname)) {
 		return "image"
 	}
 

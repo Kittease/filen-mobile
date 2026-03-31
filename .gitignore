@@ -34,3 +34,4 @@ rust/
 credentials.json
 
 .env
+modules/raw-image-converter/android/build/

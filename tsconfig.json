@@ -50,7 +50,9 @@
 		"lib/**/*.d.ts",
 		"nativewind-env.d.ts",
 		"index.d.ts",
-		"app.config.ts"
+		"app.config.ts",
+		"modules/**/*.ts",
+		"modules/**/*.tsx"
 	],
 	"exclude": ["nodejs-assets/**/*", "android/**/*", "ios/**/*", ".vscode/**/*", ".expo/**/*"]
 }
