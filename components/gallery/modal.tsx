@@ -9,6 +9,7 @@ import Video from "./previews/video"
 import Audio from "./previews/audio"
 import Header from "./header"
 import { translateMemoized } from "@/lib/i18n"
+import { prefetchImages } from "@/lib/imagePrefetch"
 import { Text } from "../nativewindui/Text"
 import Animated, { FadeIn, FadeOut } from "react-native-reanimated"
 import { ActivityIndicator } from "../nativewindui/ActivityIndicator"
@@ -204,6 +205,38 @@ export const GalleryModal = memo(() => {
 			backHandler.remove()
 		}
 	}, [visible, onDismiss])
+
+	// Prefetch adjacent images (3 in each direction) when the visible index changes
+	useEffect(() => {
+		if (currentVisibleIndex === null || items.length === 0) {
+			return
+		}
+
+		const timer = setTimeout(() => {
+			const PREFETCH_COUNT = 3
+			const start = Math.max(0, currentVisibleIndex - PREFETCH_COUNT)
+			const end = Math.min(items.length - 1, currentVisibleIndex + PREFETCH_COUNT)
+			const itemsToPrefetch: DriveCloudItem[] = []
+
+			for (let i = start; i <= end; i++) {
+				if (i === currentVisibleIndex) {
+					continue
+				}
+
+				const galleryItem = items[i]
+
+				if (galleryItem?.itemType === "cloudItem" && galleryItem.previewType === "image") {
+					itemsToPrefetch.push(galleryItem.data.item)
+				}
+			}
+
+			if (itemsToPrefetch.length > 0) {
+				prefetchImages(itemsToPrefetch)
+			}
+		}, 200)
+
+		return () => clearTimeout(timer)
+	}, [currentVisibleIndex, items])
 
 	if (!visible) {
 		return null

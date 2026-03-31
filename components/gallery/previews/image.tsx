@@ -15,6 +15,7 @@ import paths from "@/lib/paths"
 import { randomUUID } from "expo-crypto"
 import * as FileSystem from "expo-file-system"
 import { normalizeFilePathForExpo, normalizeFilePath } from "@/lib/utils"
+import { rawPreviewCache } from "@/lib/rawPreviewCache"
 
 let extractRawPreview: ((inputPath: string, outputPath: string) => Promise<void>) | null = null
 
@@ -43,6 +44,7 @@ const RawImagePreview = memo(
 		const [error, setError] = useState<string | null>(null)
 		const { colors, isDarkColorScheme } = useColorScheme()
 		const cleanupPaths = useRef<string[]>([])
+		const usingCacheRef = useRef<boolean>(false)
 
 		const style = useMemo(() => {
 			return {
@@ -64,6 +66,19 @@ const RawImagePreview = memo(
 
 			const run = async () => {
 				try {
+					// Check the prefetch cache first
+					const cachedPath = rawPreviewCache.get(fileItem.uuid)
+
+					if (cachedPath) {
+						usingCacheRef.current = true
+						setJpegPath(cachedPath)
+						setLoading(false)
+
+						return
+					}
+
+					usingCacheRef.current = false
+
 					const id = randomUUID()
 					const extname = pathModule.posix.extname(fileItem.name)
 					const tempDir = paths.temporaryDownloads()
@@ -114,14 +129,17 @@ const RawImagePreview = memo(
 			return () => {
 				cancelled = true
 
-				for (const p of cleanupPaths.current) {
-					try {
-						const f = new FileSystem.File(normalizeFilePathForExpo(p))
+				// Don't delete cached preview files — they're shared via rawPreviewCache
+				if (!usingCacheRef.current) {
+					for (const p of cleanupPaths.current) {
+						try {
+							const f = new FileSystem.File(normalizeFilePathForExpo(p))
 
-						if (f.exists) {
-							f.delete()
-						}
-					} catch {}
+							if (f.exists) {
+								f.delete()
+							}
+						} catch {}
+					}
 				}
 
 				cleanupPaths.current = []

@@ -1,6 +1,7 @@
-import { View, RefreshControl } from "react-native"
+import { View, RefreshControl, type ViewToken } from "react-native"
 import { Text } from "@/components/nativewindui/Text"
 import { memo, useState, useMemo, useCallback, useRef, useLayoutEffect } from "react"
+import { prefetchImages } from "@/lib/imagePrefetch"
 import { List, ListDataItem } from "@/components/nativewindui/List"
 import useDriveItemsQuery from "@/queries/useDriveItems.query"
 import { formatBytes } from "@/lib/utils"
@@ -39,6 +40,28 @@ export const DriveList = memo(({ queryParams, scrollToUUID }: { queryParams: Fet
 	const { layout: listLayout, onLayout } = useViewLayout(viewRef)
 	const { isTablet, isPortrait, screen } = useDimensions()
 	const keyboardState = useKeyboardState()
+
+	const prefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+	const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current
+
+	const onViewableItemsChanged = useCallback(
+		({ viewableItems }: { viewableItems: ViewToken[]; changed: ViewToken[] }) => {
+			if (prefetchTimerRef.current) {
+				clearTimeout(prefetchTimerRef.current)
+			}
+
+			prefetchTimerRef.current = setTimeout(() => {
+				const imageItems = viewableItems
+					.map(v => (v.item as ListItemInfo | undefined)?.item)
+					.filter((item): item is DriveCloudItem => !!item && item.type === "file")
+
+				if (imageItems.length > 0) {
+					prefetchImages(imageItems)
+				}
+			}, 300)
+		},
+		[]
+	)
 
 	const cloudItemsQuery = useDriveItemsQuery(queryParams)
 
@@ -234,6 +257,8 @@ export const DriveList = memo(({ queryParams, scrollToUUID }: { queryParams: Fet
 						refreshControl={refreshControl}
 						maxItemsInRecyclePool={0}
 						drawDistance={Math.floor(screen.height / 4)}
+						onViewableItemsChanged={onViewableItemsChanged}
+						viewabilityConfig={viewabilityConfig}
 					/>
 				) : (
 					<List
@@ -250,6 +275,8 @@ export const DriveList = memo(({ queryParams, scrollToUUID }: { queryParams: Fet
 						ListEmptyComponent={ListEmptyComponent}
 						ListFooterComponent={ListFooterComponent}
 						refreshControl={refreshControl}
+						onViewableItemsChanged={onViewableItemsChanged}
+						viewabilityConfig={viewabilityConfig}
 					/>
 				)}
 			</View>

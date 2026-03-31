@@ -1,9 +1,10 @@
 import { memo, useState, useCallback, useMemo, useRef, Fragment } from "react"
+import { prefetchImages } from "@/lib/imagePrefetch"
 import { Button } from "@/components/nativewindui/Button"
 import { LargeTitleHeader } from "@/components/nativewindui/LargeTitleHeader"
 import { Icon } from "@roninoss/icons"
 import { useColorScheme } from "@/lib/useColorScheme"
-import { View, RefreshControl, TouchableHighlight, Platform, ActivityIndicator } from "react-native"
+import { View, RefreshControl, TouchableHighlight, Platform, ActivityIndicator, type ViewToken } from "react-native"
 import Thumbnail from "@/components/thumbnail/item"
 import { cn } from "@/lib/cn"
 import { Container } from "@/components/Container"
@@ -195,6 +196,27 @@ export const Photos = memo(() => {
 	const selectedItemsCount = usePhotosStore(useShallow(state => state.selectedItems.length))
 	const listRef = useRef<FlashListRef<DriveCloudItem>>(null)
 	const { screen } = useDimensions()
+	const prefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+	const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current
+
+	const onViewableItemsChanged = useCallback(
+		({ viewableItems }: { viewableItems: ViewToken[]; changed: ViewToken[] }) => {
+			if (prefetchTimerRef.current) {
+				clearTimeout(prefetchTimerRef.current)
+			}
+
+			prefetchTimerRef.current = setTimeout(() => {
+				const imageItems = viewableItems
+					.map(v => v.item as DriveCloudItem | undefined)
+					.filter((item): item is DriveCloudItem => !!item && item.type === "file")
+
+				if (imageItems.length > 0) {
+					prefetchImages(imageItems)
+				}
+			}, 300)
+		},
+		[]
+	)
 
 	const queryParams = useMemo(
 		(): FetchCloudItemsParams => ({
@@ -478,6 +500,8 @@ export const Photos = memo(() => {
 						maxItemsInRecyclePool={0}
 						drawDistance={Math.floor(screen.height / 4)}
 						refreshing={refreshing}
+						onViewableItemsChanged={onViewableItemsChanged}
+						viewabilityConfig={viewabilityConfig}
 					/>
 				</View>
 			</Container>
