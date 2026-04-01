@@ -84,7 +84,20 @@ class FolderSync {
 
 			const relativePath = basePath.length > 0 ? `${basePath}/${name}` : name
 
-			if (info.isDirectory) {
+			// getInfoAsync on SAF child URIs can misreport isDirectory on some Android versions.
+			// Use readDirectoryAsync as a reliable fallback to detect directories.
+			let isDir = info.isDirectory
+
+			if (!isDir) {
+				try {
+					await FileSystemLegacy.StorageAccessFramework.readDirectoryAsync(childUri)
+					isDir = true
+				} catch {
+					isDir = false
+				}
+			}
+
+			if (isDir) {
 				const subEntries = await this.scanLocalTree(childUri, excludeDotFiles, relativePath)
 
 				for (const [subPath, entry] of subEntries) {
@@ -335,6 +348,7 @@ class FolderSync {
 
 		for (let i = 0; i < parts.length; i++) {
 			const part = parts[i]!
+			const isLastPart = i === parts.length - 1
 			const children = await FileSystemLegacy.StorageAccessFramework.readDirectoryAsync(currentUri)
 			const match = children.find(c => {
 				const decoded = decodeURIComponent(c)
@@ -344,6 +358,17 @@ class FolderSync {
 
 			if (!match) {
 				return null
+			}
+
+			// At the final segment, verify we found a file not a directory
+			if (isLastPart) {
+				try {
+					await FileSystemLegacy.StorageAccessFramework.readDirectoryAsync(match)
+					// readDirectoryAsync succeeded → it's a directory, not a file
+					return null
+				} catch {
+					// readDirectoryAsync threw → it's a file, good
+				}
 			}
 
 			currentUri = match
