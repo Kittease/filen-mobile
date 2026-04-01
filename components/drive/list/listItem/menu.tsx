@@ -19,6 +19,7 @@ import driveService from "@/services/drive.service"
 import { useShallow } from "zustand/shallow"
 import { usePhotosStore } from "@/stores/photos.store"
 import { useGalleryStore } from "@/stores/gallery.store"
+import events from "@/lib/events"
 
 export const Menu = memo(
 	({
@@ -391,6 +392,27 @@ export const Menu = memo(
 										namingScheme: "material",
 										name: "palette-outline"
 								  }
+					})
+				)
+			}
+
+			if (
+				item.type === "directory" &&
+				Platform.OS === "android" &&
+				queryParams.of !== "sharedIn" &&
+				queryParams.of !== "offline" &&
+				queryParams.of !== "trash" &&
+				hasInternet &&
+				!isUndecryptable
+			) {
+				items.push(
+					createContextItem({
+						actionKey: "localSync",
+						title: translateMemoized("drive.list.item.menu.localSync"),
+						icon: {
+							namingScheme: "material",
+							name: "sync"
+						}
 					})
 				)
 			}
@@ -890,6 +912,15 @@ export const Menu = memo(
 							await driveService.disableItemPublicLink({
 								item,
 								queryParams
+							})
+
+							break
+						}
+
+						case "localSync": {
+							events.emit("folderSyncSheet", {
+								type: "request",
+								data: { item }
 							})
 
 							break

@@ -69,6 +69,12 @@ export const Settings = memo(() => {
 		})
 	}, [router])
 
+	const onPressFolderSync = useCallback(() => {
+		router.push({
+			pathname: "/settings/folderSync"
+		})
+	}, [router])
+
 	const onChangeFileProvider = useCallback(async (value: boolean) => {
 		fullScreenLoadingModal.show()
 
@@ -178,6 +184,22 @@ export const Settings = memo(() => {
 					/>
 				)
 			},
+			...(Platform.OS === "android"
+				? [
+						{
+							id: "3a",
+							testID: "settings.folderSync",
+							title: translateMemoized("settings.index.items.folderSync"),
+							onPress: onPressFolderSync,
+							leftView: (
+								<IconView
+									name="sync"
+									className="bg-teal-500"
+								/>
+							)
+						}
+				  ]
+				: []),
 			{
 				id: "4",
 				testID: "settings.fileProvider",
@@ -254,6 +276,7 @@ export const Settings = memo(() => {
 		onPressContacts,
 		onPressAdvanced,
 		onPressCameraUpload,
+		onPressFolderSync,
 		fileProviderEnabledQuery.data,
 		onChangeFileProvider,
 		onPressAppearance

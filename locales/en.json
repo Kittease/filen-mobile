@@ -161,6 +161,7 @@
 					"removeSharedOut": "Stop sharing",
 					"disablePublicLink": "Disable link",
 					"availableOffline": "Available offline",
+					"localSync": "Local Sync",
 					"share_one": "Share Item",
 					"share_other": "Share {{count}} Items",
 					"favorite_one": "Favorite Item",
@@ -255,6 +256,27 @@
 		"colorPicker": {
 			"select": "Select",
 			"cancel": "Cancel"
+		},
+		"folderSync": {
+			"title": "Local Sync",
+			"selectLocalFolder": "Select Local Folder",
+			"localFolder": "Local Folder",
+			"folderSelected": "Folder selected",
+			"excludeDotFiles": "Exclude dot files",
+			"startSync": "Start Sync",
+			"syncNow": "Sync Now",
+			"removeSync": "Remove Sync",
+			"removeConfirm": "Remove this sync pair? Local files will not be deleted.",
+			"removeConfirmTitle": "Remove Sync",
+			"syncing": "Syncing...",
+			"lastSynced": "Last synced: {{time}}",
+			"neverSynced": "Never synced",
+			"idle": "Idle",
+			"error": "Error",
+			"cancel": "Cancel",
+			"noFolderSelected": "Please select a local folder first.",
+			"configured": "Sync configured for this folder.",
+			"removed": "Sync pair removed."
 		}
 	},
 	"fileVersionHistory": {
@@ -627,6 +649,19 @@
 		"emptySearch": "Nothing found for this search"
 	},
 	"settings": {
+		"folderSync": {
+			"title": "Folder Sync",
+			"back": "Settings",
+			"empty": "No sync pairs configured. Open a folder's menu in the drive and tap \"Local Sync\" to set one up.",
+			"syncAll": "Sync All",
+			"lastSynced": "Last synced {{time}}",
+			"neverSynced": "Never synced",
+			"syncing": "Syncing {{done}}/{{total}}...",
+			"idle": "Idle",
+			"error": "Error: {{message}}",
+			"cloudFolder": "Cloud: {{name}}",
+			"localFolder": "Local: {{path}}"
+		},
 		"advanced": {
 			"title": "Advanced",
 			"prompts": {
@@ -966,6 +1001,7 @@
 				"security": "Security",
 				"events": "Events",
 				"cameraUpload": "Camera upload",
+				"folderSync": "Folder Sync",
 				"fileProvider": "File provider",
 				"fileProviderInfo": "Enable the iOS Files integration to access your files outside of the app.",
 				"documentsProvider": "Documents provider",

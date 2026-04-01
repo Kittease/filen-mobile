@@ -2,8 +2,18 @@ import paths from "./paths"
 import { Directory } from "expo-file-system"
 import pathModule from "path"
 import { open, type NitroSQLiteConnection } from "react-native-nitro-sqlite"
+import type { SyncPairConfig, SyncMode } from "@/stores/folderSync.store"
 
-export const SQLITE_VERSION: number = 7
+export type SyncStateRow = {
+	syncPairId: string
+	relativePath: string
+	size: number
+	lastModified: number
+	side: "local" | "remote"
+	fileUUID: string | null
+}
+
+export const SQLITE_VERSION: number = 8
 
 export const INIT_QUERIES: {
 	query: string
@@ -107,6 +117,26 @@ export const INIT_QUERIES: {
 	},
 	{
 		query: "CREATE UNIQUE INDEX IF NOT EXISTS offline_files_uuid_unique ON offline_files (uuid)",
+		pragma: false
+	},
+	{
+		query: "CREATE TABLE IF NOT EXISTS sync_pairs (id TEXT PRIMARY KEY NOT NULL, remoteUUID TEXT NOT NULL, remotePath TEXT NOT NULL, remoteName TEXT NOT NULL, localUri TEXT NOT NULL, mode TEXT NOT NULL DEFAULT 'twoWay', paused INTEGER NOT NULL DEFAULT 0, excludeDotFiles INTEGER NOT NULL DEFAULT 1, createdAt INTEGER NOT NULL) WITHOUT ROWID",
+		pragma: false
+	},
+	{
+		query: "CREATE INDEX IF NOT EXISTS sync_pairs_remoteUUID ON sync_pairs (remoteUUID)",
+		pragma: false
+	},
+	{
+		query: "CREATE UNIQUE INDEX IF NOT EXISTS sync_pairs_id_unique ON sync_pairs (id)",
+		pragma: false
+	},
+	{
+		query: "CREATE TABLE IF NOT EXISTS sync_state (syncPairId TEXT NOT NULL, relativePath TEXT NOT NULL, size INTEGER NOT NULL, lastModified INTEGER NOT NULL, side TEXT NOT NULL, fileUUID TEXT, PRIMARY KEY (syncPairId, relativePath, side)) WITHOUT ROWID",
+		pragma: false
+	},
+	{
+		query: "CREATE INDEX IF NOT EXISTS sync_state_syncPairId ON sync_state (syncPairId)",
 		pragma: false
 	},
 	{
@@ -229,6 +259,183 @@ export class SQLite {
 					await this.db.executeAsync("DELETE FROM offline_files WHERE uuid = ?", [uuid])
 				})
 			)
+		}
+	}
+
+	public syncPairs = {
+		add: async (pair: SyncPairConfig): Promise<void> => {
+			await this.db.executeAsync(
+				"INSERT OR REPLACE INTO sync_pairs (id, remoteUUID, remotePath, remoteName, localUri, mode, paused, excludeDotFiles, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+				[pair.id, pair.remoteUUID, pair.remotePath, pair.remoteName, pair.localUri, pair.mode, pair.paused ? 1 : 0, pair.excludeDotFiles ? 1 : 0, pair.createdAt]
+			)
+		},
+		remove: async (id: string): Promise<void> => {
+			await this.db.executeAsync("DELETE FROM sync_pairs WHERE id = ?", [id])
+			await this.db.executeAsync("DELETE FROM sync_state WHERE syncPairId = ?", [id])
+		},
+		get: async (id: string): Promise<SyncPairConfig | null> => {
+			const { rows } = await this.db.executeAsync<{
+				id: string
+				remoteUUID: string
+				remotePath: string
+				remoteName: string
+				localUri: string
+				mode: string
+				paused: number
+				excludeDotFiles: number
+				createdAt: number
+			}>("SELECT * FROM sync_pairs WHERE id = ?", [id])
+
+			if (!rows || rows.length === 0) {
+				return null
+			}
+
+			const row = rows.item(0)
+
+			if (!row) {
+				return null
+			}
+
+			return {
+				id: row.id,
+				remoteUUID: row.remoteUUID,
+				remotePath: row.remotePath,
+				remoteName: row.remoteName,
+				localUri: row.localUri,
+				mode: row.mode as SyncMode,
+				paused: row.paused === 1,
+				excludeDotFiles: row.excludeDotFiles === 1,
+				createdAt: row.createdAt
+			}
+		},
+		list: async (): Promise<SyncPairConfig[]> => {
+			const { rows } = await this.db.executeAsync<{
+				id: string
+				remoteUUID: string
+				remotePath: string
+				remoteName: string
+				localUri: string
+				mode: string
+				paused: number
+				excludeDotFiles: number
+				createdAt: number
+			}>("SELECT * FROM sync_pairs ORDER BY createdAt DESC")
+
+			if (!rows) {
+				return []
+			}
+
+			return rows._array.map(row => ({
+				id: row.id,
+				remoteUUID: row.remoteUUID,
+				remotePath: row.remotePath,
+				remoteName: row.remoteName,
+				localUri: row.localUri,
+				mode: row.mode as SyncMode,
+				paused: row.paused === 1,
+				excludeDotFiles: row.excludeDotFiles === 1,
+				createdAt: row.createdAt
+			}))
+		},
+		getByRemoteUUID: async (remoteUUID: string): Promise<SyncPairConfig | null> => {
+			const { rows } = await this.db.executeAsync<{
+				id: string
+				remoteUUID: string
+				remotePath: string
+				remoteName: string
+				localUri: string
+				mode: string
+				paused: number
+				excludeDotFiles: number
+				createdAt: number
+			}>("SELECT * FROM sync_pairs WHERE remoteUUID = ? LIMIT 1", [remoteUUID])
+
+			if (!rows || rows.length === 0) {
+				return null
+			}
+
+			const row = rows.item(0)
+
+			if (!row) {
+				return null
+			}
+
+			return {
+				id: row.id,
+				remoteUUID: row.remoteUUID,
+				remotePath: row.remotePath,
+				remoteName: row.remoteName,
+				localUri: row.localUri,
+				mode: row.mode as SyncMode,
+				paused: row.paused === 1,
+				excludeDotFiles: row.excludeDotFiles === 1,
+				createdAt: row.createdAt
+			}
+		}
+	}
+
+	public syncState = {
+		save: async (entries: SyncStateRow[]): Promise<void> => {
+			if (entries.length === 0) {
+				return
+			}
+
+			const batchSize = 50
+
+			for (let i = 0; i < entries.length; i += batchSize) {
+				const batch = entries.slice(i, i + batchSize)
+
+				await this.db.executeBatchAsync(
+					batch.map(entry => ({
+						query: "INSERT OR REPLACE INTO sync_state (syncPairId, relativePath, size, lastModified, side, fileUUID) VALUES (?, ?, ?, ?, ?, ?)",
+						params: [entry.syncPairId, entry.relativePath, entry.size, entry.lastModified, entry.side, entry.fileUUID ?? null]
+					}))
+				)
+			}
+		},
+		load: async (syncPairId: string): Promise<{ local: Map<string, SyncStateRow>; remote: Map<string, SyncStateRow> }> => {
+			const { rows } = await this.db.executeAsync<SyncStateRow>(
+				"SELECT * FROM sync_state WHERE syncPairId = ?",
+				[syncPairId]
+			)
+
+			const local = new Map<string, SyncStateRow>()
+			const remote = new Map<string, SyncStateRow>()
+
+			if (!rows) {
+				return { local, remote }
+			}
+
+			for (const row of rows._array) {
+				if (row.side === "local") {
+					local.set(row.relativePath, row)
+				} else {
+					remote.set(row.relativePath, row)
+				}
+			}
+
+			return { local, remote }
+		},
+		clear: async (syncPairId: string): Promise<void> => {
+			await this.db.executeAsync("DELETE FROM sync_state WHERE syncPairId = ?", [syncPairId])
+		},
+		removeEntries: async (syncPairId: string, relativePaths: string[], side: "local" | "remote"): Promise<void> => {
+			if (relativePaths.length === 0) {
+				return
+			}
+
+			const batchSize = 50
+
+			for (let i = 0; i < relativePaths.length; i += batchSize) {
+				const batch = relativePaths.slice(i, i + batchSize)
+
+				await this.db.executeBatchAsync(
+					batch.map(p => ({
+						query: "DELETE FROM sync_state WHERE syncPairId = ? AND relativePath = ? AND side = ?",
+						params: [syncPairId, p, side]
+					}))
+				)
+			}
 		}
 	}
 

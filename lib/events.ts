@@ -9,6 +9,17 @@ import type { SelectDriveItemsEvent } from "@/services/drive.service"
 import type { AlertPromptEvent } from "@/components/prompts/alertPrompt"
 import type { SelectTrackPlayerPlaylistsEvent } from "@/services/trackPlayer.service"
 
+export type FolderSyncSheetEvent =
+	| {
+			type: "request"
+			data: {
+				item: DriveCloudItem
+			}
+	  }
+	| {
+			type: "closed"
+	  }
+
 export type Events = {
 	socketEvent: SocketEvent
 	inputPrompt: InputPromptEvent
@@ -39,6 +50,7 @@ export type Events = {
 	focusNotesChecklistItem: {
 		id: string
 	}
+	folderSyncSheet: FolderSyncSheetEvent
 }
 
 export class TypedEventEmitter<T> {

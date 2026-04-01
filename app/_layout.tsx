@@ -16,6 +16,7 @@ import { queryClient, restoreQueries } from "@/queries/client"
 import { QueryClientProvider } from "@tanstack/react-query"
 import InputPrompt from "@/components/prompts/inputPrompt"
 import ColorPickerSheet from "@/components/sheets/colorPickerSheet"
+import FolderSyncSheet from "@/components/sheets/folderSyncSheet"
 import ItemInfoSheet from "@/components/sheets/itemInfoSheet"
 import { FullScreenLoadingModal } from "@/components/modals/fullScreenLoadingModal"
 import AuthedListeners from "@/components/authedListeners"
@@ -184,6 +185,7 @@ export default function RootLayout() {
 												<InputPrompt />
 												<AlertPrompt />
 												<ColorPickerSheet />
+												<FolderSyncSheet />
 												<GalleryModal />
 												<PortalHost />
 											</ShareIntentProvider>
