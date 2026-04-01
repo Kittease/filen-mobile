@@ -1,7 +1,7 @@
 import paths from "./paths"
 import { Directory } from "expo-file-system"
 import pathModule from "path"
-import { open, type NitroSQLiteConnection } from "react-native-nitro-sqlite"
+import { open, type NitroSQLiteConnection, NITRO_SQLITE_NULL } from "react-native-nitro-sqlite"
 import type { SyncPairConfig, SyncMode } from "@/stores/folderSync.store"
 
 export type SyncStateRow = {
@@ -388,7 +388,7 @@ export class SQLite {
 				await this.db.executeBatchAsync(
 					batch.map(entry => ({
 						query: "INSERT OR REPLACE INTO sync_state (syncPairId, relativePath, size, lastModified, side, fileUUID) VALUES (?, ?, ?, ?, ?, ?)",
-						params: [entry.syncPairId, entry.relativePath, entry.size, entry.lastModified, entry.side, entry.fileUUID ?? null]
+						params: [entry.syncPairId, entry.relativePath, entry.size, entry.lastModified, entry.side, entry.fileUUID ?? NITRO_SQLITE_NULL]
 					}))
 				)
 			}
